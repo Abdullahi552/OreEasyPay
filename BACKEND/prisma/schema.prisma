@@ -1,0 +1,228 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // url is handled in prisma.config.ts
+}
+
+model Organization {
+  id           String   @id @default(uuid())
+  name         String
+  email        String
+  phone        String
+  rcNumber     String?
+  address      String?
+  balance      Decimal  @default(0.00) @db.Decimal(15, 2)
+  currency     String   @default("NGN")
+  webhookUrl   String?
+  createdAt    DateTime @default(now())
+
+  users        User[]
+  staff        Staff[]
+  workflows    Workflow[]
+  batches      Batch[]
+  fundings     Funding[]
+  transactions Transaction[]
+  auditLogs    AuditLog[]
+  notifications Notification[]
+}
+
+model User {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  email          String   @unique
+  passwordHash   String
+  role           String   // owner, admin, finance, approver
+  status         String   @default("active")
+  twoFactor      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  sessions       Session[]
+  batchesCreated Batch[]  @relation("CreatedBy")
+  approvals      BatchApproval[]
+  history        BatchHistory[]
+  auditLogs      AuditLog[]
+  notifications  Notification[]
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshToken String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+}
+
+model Staff {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  email          String?
+  department     String
+  jobTitle       String?
+  salary         Decimal  @db.Decimal(15, 2)
+  bankCode       String
+  bankName       String
+  accountNumber  String
+  status         String   @default("active")
+  createdAt      DateTime @default(now())
+}
+
+model Workflow {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  isDefault      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  steps          WorkflowStep[]
+  batches        Batch[]
+}
+
+model WorkflowStep {
+  id          String   @id @default(uuid())
+  workflowId  String
+  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  position    Int
+  name        String
+  type        String   // draft, review, approve
+  requireAll  Boolean  @default(false)
+  minAmount   Decimal? @db.Decimal(15, 2)
+  maxAmount   Decimal? @db.Decimal(15, 2)
+  departments String[] 
+  
+  approvers   WorkflowStepApprover[]
+}
+
+model WorkflowStepApprover {
+  stepId String
+  step   WorkflowStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  userId String
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@id([stepId, userId])
+}
+
+model Batch {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reference      String   @unique
+  title          String
+  note           String?
+  payDate        DateTime?
+  workflowId     String
+  workflow       Workflow @relation(fields: [workflowId], references: [id])
+  workflowSnapshot Json
+  status         String   @default("draft")
+  currentStep    Int      @default(0)
+  createdById    String
+  createdBy      User     @relation("CreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  items          BatchItem[]
+  approvals      BatchApproval[]
+  history        BatchHistory[]
+  transactions   Transaction[]
+}
+
+model BatchItem {
+  id          String   @id @default(uuid())
+  batchId     String
+  batch       Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  staffId     String
+  name        String
+  department  String
+  bankName    String
+  accountNumber String
+  amount      Decimal  @db.Decimal(15, 2)
+  rejected    Json?
+}
+
+model BatchApproval {
+  id        String   @id @default(uuid())
+  batchId   String
+  batch     Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  stepId    String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model BatchHistory {
+  id        String   @id @default(uuid())
+  batchId   String
+  batch     Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  stepId    String?
+  stepName  String?
+  action    String
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  comment   String?
+  excluded  Int?
+  createdAt DateTime @default(now())
+}
+
+model Funding {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reference      String   @unique
+  amount         Decimal  @db.Decimal(15, 2)
+  method         String
+  status         String   @default("pending")
+  providerRef    String?
+  checkoutUrl    String?
+  createdById    String
+  createdAt      DateTime @default(now())
+}
+
+model Transaction {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reference      String   @unique
+  type           String   // funding, payout
+  direction      String   // credit, debit
+  amount         Decimal  @db.Decimal(15, 2)
+  status         String   @default("pending")
+  counterparty   String?
+  description    String?
+  batchId        String?
+  batch          Batch?   @relation(fields: [batchId], references: [id])
+  createdAt      DateTime @default(now())
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  action         String
+  entity         String
+  entityId       String
+  summary        String
+  createdAt      DateTime @default(now())
+}
+
+model Notification {
+  id             String   @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String
+  body           String
+  link           String?
+  read           Boolean  @default(false)
+  createdAt      DateTime @default(now())
+}
